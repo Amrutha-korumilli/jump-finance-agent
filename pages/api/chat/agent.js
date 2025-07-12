@@ -1,65 +1,67 @@
-// /pages/api/chat/agent.js
-import { getToken } from "next-auth/jwt";
+// pages/api/chat/agent.js
+
 import { PrismaClient } from "@prisma/client";
-import { OpenAI } from "openai";
+import { getToken } from "next-auth/jwt";
+import { CohereClient } from "cohere-ai";
 
 const prisma = new PrismaClient();
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const cohere = new CohereClient({ apiKey: process.env.CO_API_KEY });
 
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const token = await getToken({ req });
-  if (!token || !token.email) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const { message } = req.body;
-  if (!message) {
-    return res.status(400).json({ error: "No message provided" });
-  }
-
   try {
-    // Save user's message to DB
-    await prisma.message.create({
-        data: {
-          role: "user",
-          content: message,
-          email: token.email,
-          sender: "user", // or whatever appropriate value
-        },
-      });
-      
-    // Call OpenAI to get a reply
-    const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "You are a helpful AI agent that assists with meetings, emails, and CRM tasks.",
-        },
-        {
-          role: "user",
-          content: message,
-        },
-      ],
+    const token = await getToken({ req });
+    const email = token?.email;
+
+    if (!email) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { message } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: "No message provided" });
+    }
+
+    // ✅ Ensure the user exists
+    await prisma.user.upsert({
+      where: { email },
+      update: {}, // nothing to update
+      create: { email },
     });
 
-    const reply = completion.choices[0].message.content;
-
-    // Save AI reply to DB
+    // ✅ Save user message
     await prisma.message.create({
-        data: {
-          role: "assistant",
-          content: reply,
-          email: token.email,
-          sender: "agent",
+      data: {
+        role: "user",
+        sender: "user",
+        content: message,
+        user: {
+          connect: { email },
         },
-      });
-      
+      },
+    });
+
+    // ✅ Get AI reply from Cohere
+    const completion = await cohere.chat({
+      message,
+      chatHistory: [],
+      connectors: [],
+    });
+
+    const reply = completion.text;
+
+    // ✅ Save assistant reply
+    await prisma.message.create({
+      data: {
+        role: "assistant",
+        sender: "agent",
+        content: reply,
+        user: {
+          connect: { email },
+        },
+      },
+    });
 
     return res.status(200).json({ reply });
   } catch (error) {

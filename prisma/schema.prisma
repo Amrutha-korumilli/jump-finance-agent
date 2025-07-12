@@ -1,33 +1,53 @@
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-url = env("DATABASE_URL")
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
-  hubspotToken   HubspotToken?
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  name                String?
+  image               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  hubspotToken        HubspotToken?
+  ongoingInstructions UserInstruction[]
+  messages            Message[]
 }
 
 model HubspotToken {
-  id            String   @id @default(cuid())
-  accessToken   String
-  refreshToken  String
-  expiresAt     DateTime
-  userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id])
+  id           String    @id @default(cuid())
+  accessToken  String
+  refreshToken String
+  expiresAt    DateTime
+  userId       String    @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+model UserInstruction {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instruction String   @db.Text
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, instruction])
+}
+
 model Message {
-  id      String   @id @default(cuid())
-  role    String   
-  content String
-  email   String
-  sender  String
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String
+  sender    String   // <-- add this
+  content   String   @db.Text
   createdAt DateTime @default(now())
 }
 
