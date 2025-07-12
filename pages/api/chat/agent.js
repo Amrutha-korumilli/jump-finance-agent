@@ -3,6 +3,7 @@
 import { PrismaClient } from "@prisma/client";
 import { getToken } from "next-auth/jwt";
 import { CohereClient } from "cohere-ai";
+import { searchRelevantContext } from "../../../lib/search";
 
 const prisma = new PrismaClient();
 const cohere = new CohereClient({ apiKey: process.env.CO_API_KEY });
@@ -14,58 +15,49 @@ export default async function handler(req, res) {
     const token = await getToken({ req });
     const email = token?.email;
 
-    if (!email) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (!email) return res.status(401).json({ error: "Unauthorized" });
 
     const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: "No message provided" });
-    }
+    if (!message) return res.status(400).json({ error: "No message provided" });
 
-    // ✅ Ensure the user exists
-    await prisma.user.upsert({
+    // Ensure user exists
+    const user = await prisma.user.upsert({
       where: { email },
-      update: {}, // nothing to update
+      update: {},
       create: { email },
     });
 
-    // ✅ Save user message
+    // Save user message
     await prisma.message.create({
       data: {
         role: "user",
         sender: "user",
         content: message,
-        user: {
-          connect: { email },
-        },
+        user: { connect: { email } },
       },
     });
 
-    // ✅ Get AI reply from Cohere
+    // RAG: Get relevant context
+    const ragContext = await searchRelevantContext(message, user.id);
+
+    // Call Cohere Chat API with context
     const completion = await cohere.chat({
       message,
-      chatHistory: [
-        {
-          role: "SYSTEM",
-          message: "You are a smart AI agent that helps financial advisors. Use Gmail, HubSpot, and Calendar data to answer questions about meetings, clients, and tasks. Speak clearly and helpfully, like a human assistant."
-        }
-      ],
-      connectors: [],
+      documents: ragContext,
+      chatHistory: [],
+      temperature: 0.3,
+      promptTruncation: "AUTO",
     });
-    
 
     const reply = completion.text;
 
-    // ✅ Save assistant reply
+    // Save assistant reply
     await prisma.message.create({
       data: {
         role: "assistant",
         sender: "agent",
         content: reply,
-        user: {
-          connect: { email },
-        },
+        user: { connect: { email } },
       },
     });
 
