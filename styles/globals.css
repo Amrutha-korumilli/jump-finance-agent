@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* optional tweaks */
+body {
+  font-family: 'Inter', sans-serif; /* Confirmed */
+  /* Background color set in layout for more specific control */
+}
