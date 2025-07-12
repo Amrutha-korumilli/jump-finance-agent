@@ -45,9 +45,15 @@ export default async function handler(req, res) {
     // ✅ Get AI reply from Cohere
     const completion = await cohere.chat({
       message,
-      chatHistory: [],
+      chatHistory: [
+        {
+          role: "SYSTEM",
+          message: "You are a smart AI agent that helps financial advisors. Use Gmail, HubSpot, and Calendar data to answer questions about meetings, clients, and tasks. Speak clearly and helpfully, like a human assistant."
+        }
+      ],
       connectors: [],
     });
+    
 
     const reply = completion.text;
 
