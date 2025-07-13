@@ -38,30 +38,25 @@ export default async function handler(req, res) {
       },
     });
 
-    // 🔍 Search relevant documents from Pinecone
-    const user = await prisma.user.findUnique({ where: { email } });
-    const contextResults = await searchRelevantContext(message, user.id);
-
-    const documents = contextResults.map((item) => {
-      const m = item.metadata || {};
-      if (m.source === "gmail") {
-        return {
-          text: `Gmail email: Subject "${m.subject}", snippet "${m.snippet}"`,
-        };
-      } else if (m.source === "hubspot_contact") {
-        return {
-          text: `HubSpot contact: Name "${m.name}", Email "${m.email}", Company "${m.company}"`,
-        };
-      } else if (m.source === "hubspot_note") {
-        return {
-          text: `HubSpot note: ${m.content}`,
-        };
-      } else {
-        return { text: JSON.stringify(m) };
-      }
-    });
-
-    let toolResults = [];
+  const user = await prisma.user.findUnique({ where: { email } });
+  const contextResults = await searchRelevantContext(message, user.id);
+  console.log('contextResults', contextResults);
+  const documents = contextResults.map(item => {
+    const m = item.metadata || {};
+    if (m.source === 'gmail') {
+      return { text: `Gmail email: Subject: ${m.subject}, Snippet: ${m.snippet}` };
+    }
+    if (m.source === 'hubspot_contact') {
+      return { text: `HubSpot Contact: Name: ${m.name}, Email: ${m.email}, Company: ${m.company}` };
+    }
+    if (m.source === 'hubspot_note') {
+      const name = m.contactName || 'Unknown contact';
+      return { text: `HubSpot Note from ${name}: ${m.content}` };
+    }
+    return { text: 'Unknown source' };
+  });
+  
+  
 
     // 🧠 First pass — call Cohere with tools
     let completion = await cohere.chat({
