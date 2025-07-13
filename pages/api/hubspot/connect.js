@@ -1,7 +1,7 @@
 export default async function handler(req, res) {
     const baseUrl = "https://app.hubspot.com/oauth/authorize";
     const clientId = process.env.HUBSPOT_CLIENT_ID;
-    const redirectUri = "http://localhost:3001/api/hubspot/callback";
+    const redirectUri = "http://localhost:3000/api/hubspot/callback";
   
     const scope = [
       "crm.objects.contacts.read",

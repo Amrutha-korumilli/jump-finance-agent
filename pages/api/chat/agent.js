@@ -1,11 +1,8 @@
 // pages/api/chat/agent.js
-
 import { PrismaClient } from "@prisma/client";
 import { getToken } from "next-auth/jwt";
 import { CohereClient } from "cohere-ai";
 import { searchRelevantContext } from "../../../lib/search";
-import { tools } from "../../../lib/tools";
-import { runTool } from "../../../lib/toolFunctions";
 
 const prisma = new PrismaClient();
 const cohere = new CohereClient({ apiKey: process.env.CO_API_KEY });
@@ -21,14 +18,14 @@ export default async function handler(req, res) {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: "No message provided" });
 
-    // ✅ Ensure user exists
+    // Ensure user exists
     await prisma.user.upsert({
       where: { email },
       update: {},
       create: { email },
     });
 
-    // ✅ Save user message
+    // Save user message
     await prisma.message.create({
       data: {
         role: "user",
@@ -38,78 +35,36 @@ export default async function handler(req, res) {
       },
     });
 
-  const user = await prisma.user.findUnique({ where: { email } });
-  const contextResults = await searchRelevantContext(message, user.id);
-  console.log('contextResults', contextResults);
-  const documents = contextResults.map(item => {
-    const m = item.metadata || {};
-    if (m.source === 'gmail') {
-      return { text: `Gmail email: Subject: ${m.subject}, Snippet: ${m.snippet}` };
-    }
-    if (m.source === 'hubspot_contact') {
-      return { text: `HubSpot Contact: Name: ${m.name}, Email: ${m.email}, Company: ${m.company}` };
-    }
-    if (m.source === 'hubspot_note') {
-      const name = m.contactName || 'Unknown contact';
-      return { text: `HubSpot Note from ${name}: ${m.content}` };
-    }
-    return { text: 'Unknown source' };
-  });
-  
-  
+    // 🔍 RAG: search context from Pinecone
+    const user = await prisma.user.findUnique({ where: { email } });
+    const contextResults = await searchRelevantContext(message, user.id);
 
-    // 🧠 First pass — call Cohere with tools
-    let completion = await cohere.chat({
-      message,
-      documents,
-      preamble:
-      "You are a smart assistant for financial advisors. You can use tools like sendEmail or create_hubspot_contact. If the user asks to schedule, notify, or reach out to someone, find their email from contacts or Gmail and use sendEmail tool. Be proactive and assume the user's intent is clear.",
-      tools,
-      toolResults,
-      chatHistory: [],
-    });
-
-    // 🛠 If tools were requested
-    if (completion.toolCalls && completion.toolCalls.length > 0) {
-      for (const call of completion.toolCalls) {
-        const toolName = call.name;
-        const args = call.parameters;
-
-        const result = await runTool(toolName, args);
-
-        toolResults.push({
-          callId: call.callId,
-          outputs: [result],
-        });
+    // ✅ Format metadata into plain text documents
+    const documents = contextResults.map(item => {
+      const m = item.metadata || {};
+      if (m.source === 'gmail') {
+        return { text: `Gmail email: Subject: ${m.subject}, Snippet: ${m.snippet}` };
       }
-
-      // Second pass with tool results
-      completion = await cohere.chat({
-        message,
-        documents,
-        preamble:
-          "You are an AI agent for financial advisors. Use the documents and previous tool outputs to help.",
-        tools,
-        toolResults,
-        chatHistory: [],
-      });
-    }
-
-    const reply = completion.text;
-
-    // ✅ Save assistant reply
-    await prisma.message.create({
-      data: {
-        role: "assistant",
-        sender: "agent",
-        content: reply,
-        user: { connect: { email } },
-      },
+      if (m.source === 'hubspot_contact') {
+        return { text: `HubSpot Contact: Name: ${m.name}, Email: ${m.email}, Company: ${m.company}` };
+      }
+      if (m.source === 'hubspot_note') {
+        const name = m.contactName || 'Unknown contact';
+        return { text: `HubSpot Note from ${name}: ${m.content}` };
+      }
+      return { text: 'Unknown source' };
     });
+    
 
+    // 🧠 Call Cohere chat API
+    const completion = await cohere.chat({ message, documents, chatHistory: [], preamble:  "You are an AI assistant for financial advisors. Use the provided documents to help answer accurately." });
+    const reply = completion.text;
+  
+    await prisma.message.create({ data: { role: 'assistant', sender: 'agent', content: reply, user: { connect: { email } } } });
+  
     return res.status(200).json({ reply });
-  } catch (error) {
-    console.error("AI agent error:", error);
-    return res.status(500).json({ error: "Something went wrong." });
+    } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
 }
