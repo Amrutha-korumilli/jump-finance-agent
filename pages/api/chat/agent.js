@@ -4,6 +4,13 @@ import { CohereClient } from "cohere-ai";
 import { searchRelevantContext } from "../../../lib/search";
 import { fetchCalendarEvents } from "../../../lib/calendar";
 import { getGoogleAccessToken } from "../../../lib/googleToken";
+import { extractToolCommand } from "../../../lib/parseToolPrompt";
+import {
+  sendEmailToolFunction,
+  createHubspotContactFunction,
+  scheduleMeetingFunction,
+} from "../../../lib/toolFunctions";
+
 import dayjs from "dayjs";
 import * as chrono from "chrono-node";
 
@@ -21,6 +28,7 @@ export default async function handler(req, res) {
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: "No message provided" });
 
+    // Save user and message
     await prisma.user.upsert({ where: { email }, update: {}, create: { email } });
 
     await prisma.message.create({
@@ -34,9 +42,8 @@ export default async function handler(req, res) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
+    // Meeting handling
     const isMeetingQuery = /meetings?|calendar|appointment|event/i.test(message.toLowerCase());
-    let meetings = [];
-
     if (isMeetingQuery) {
       const now = dayjs();
       const msg = message.toLowerCase();
@@ -44,11 +51,9 @@ export default async function handler(req, res) {
       let isPastOnly = false;
       let person = null;
 
-      // Extract person name
       const personMatch = message.match(/(?:with|about|for|from|to)\s([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)/i);
       if (personMatch) person = personMatch[1].toLowerCase().trim();
 
-      // Smart time parsing
       const parsed = (!/this month|last month/.test(msg)) ? chrono.parse(message) : [];
       if (parsed.length > 0) {
         const from = parsed[0].start?.date();
@@ -87,7 +92,7 @@ export default async function handler(req, res) {
       let allMeetings = await fetchCalendarEvents(calendarToken, timeMin, timeMax, person);
 
       if (isPastOnly) {
-        allMeetings = allMeetings.filter(m => dayjs(m.time).isBefore(now));
+        allMeetings = allMeetings.filter((m) => dayjs(m.time).isBefore(now));
       }
 
       const reply = allMeetings.length
@@ -106,7 +111,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ reply, meetings: allMeetings });
     }
 
-    // Default: RAG fallback
+    // === RAG + LLM ===
     const contextResults = await searchRelevantContext(message, user.id);
     const documents = contextResults.map((item) => {
       const m = item.metadata || {};
@@ -127,23 +132,45 @@ export default async function handler(req, res) {
       message,
       documents,
       chatHistory: [],
-      preamble: "You are an AI assistant for financial advisors. Use the provided documents to help answer accurately.",
+      preamble: `
+      You are an AI assistant. If a user asks you to send an email or schedule a meeting, output a line starting with TOOL: followed by details.
+      Examples:
+      TOOL: sendEmail TO: alice@example.com SUBJECT: Hello BODY: How are you?
+      TOOL: scheduleMeeting TO: bob@example.com TIME: 2025-07-14T17:00:00Z SUMMARY: Sync
+      `,
     });
 
-    const reply = completion.text;
+    const finalReply = completion.text.trim();
+
+    // 🛠 Manual tool extraction from text
+    const toolData = extractToolCommand(finalReply);
+
+    if (toolData?.name === "sendEmail") {
+      try {
+        const result = await sendEmailToolFunction({
+          to: toolData.to,
+          subject: toolData.subject,
+          body: toolData.body,
+          user,
+        });
+        console.log("✅ Email sent result:", result);
+      } catch (err) {
+        console.error("❌ Error in sendEmailToolFunction:", err);
+      }
+    }
 
     await prisma.message.create({
       data: {
         role: "assistant",
         sender: "agent",
-        content: reply,
+        content: finalReply,
         user: { connect: { email } },
       },
     });
 
-    return res.status(200).json({ reply });
+    return res.status(200).json({ reply: finalReply });
   } catch (error) {
-    console.error(error);
+    console.error("❌ agent.js error:", error);
     return res.status(500).json({ error: "Internal Server Error" });
   }
 }
