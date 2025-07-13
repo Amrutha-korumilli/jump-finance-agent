@@ -35,19 +35,37 @@ export default async function handler(req, res) {
       },
     });
 
-    // 🔍 RAG: search relevant context from Pinecone
+    // 🔍 RAG: search context from Pinecone
     const user = await prisma.user.findUnique({ where: { email } });
-    const context = await searchRelevantContext(message, user.id);
+    const contextResults = await searchRelevantContext(message, user.id) || [];
 
-    // 🧠 Call Cohere with context
+const formattedDocs = contextResults.map((item) => {
+  const m = item.metadata || {};
+  if (m.source === "gmail") {
+    return {
+      text: `From Gmail: Subject: ${m.subject}, Snippet: ${m.snippet}`,
+    };
+  } else if (m.source === "hubspot_contact") {
+    return {
+      text: `HubSpot Contact: ${m.firstname}, Email: ${m.email}, `,
+    };
+  } else if (m.source === "hubspot_note") {
+    return {
+      text: `HubSpot Note: ${m.content}`,
+    };
+  } else {
+    return { text: JSON.stringify(m) };
+  }
+});
+    
+
+    // 🧠 Call Cohere chat API
     const completion = await cohere.chat({
       message,
-      documents: context,
+      documents: formattedDocs,
       chatHistory: [],
       preamble: "You are an AI assistant for financial advisors. Use the provided documents to help answer accurately.",
     });
-    
-     
 
     const reply = completion.text;
 
