@@ -54,7 +54,7 @@ export default async function handler(req, res) {
       }
       return { text: 'Unknown source' };
     });
-    
+    console.log(documents);
 
     // 🧠 Call Cohere chat API
     const completion = await cohere.chat({ message, documents, chatHistory: [], preamble:  "You are an AI assistant for financial advisors. Use the provided documents to help answer accurately." });
