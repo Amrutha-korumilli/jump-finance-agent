@@ -18,6 +18,7 @@ model User {
   hubspotToken        HubspotToken?
   ongoingInstructions UserInstruction[]
   messages            Message[]
+   googleAccessToken   String?    
 }
 
 model HubspotToken {
