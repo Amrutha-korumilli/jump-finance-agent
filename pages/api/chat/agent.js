@@ -1,5 +1,4 @@
 // pages/api/chat/agent.js
-
 import { PrismaClient } from "@prisma/client";
 import { getToken } from "next-auth/jwt";
 import { CohereClient } from "cohere-ai";
@@ -14,14 +13,13 @@ export default async function handler(req, res) {
   try {
     const token = await getToken({ req });
     const email = token?.email;
-
     if (!email) return res.status(401).json({ error: "Unauthorized" });
 
     const { message } = req.body;
     if (!message) return res.status(400).json({ error: "No message provided" });
 
     // Ensure user exists
-    const user = await prisma.user.upsert({
+    await prisma.user.upsert({
       where: { email },
       update: {},
       create: { email },
@@ -37,17 +35,19 @@ export default async function handler(req, res) {
       },
     });
 
-    // RAG: Get relevant context
-    const ragContext = await searchRelevantContext(message, user.id);
+    // 🔍 RAG: search relevant context from Pinecone
+    const user = await prisma.user.findUnique({ where: { email } });
+    const context = await searchRelevantContext(message, user.id);
 
-    // Call Cohere Chat API with context
+    // 🧠 Call Cohere with context
     const completion = await cohere.chat({
       message,
-      documents: ragContext,
+      documents: context,
       chatHistory: [],
-      temperature: 0.3,
-      promptTruncation: "AUTO",
+      preamble: "You are an AI assistant for financial advisors. Use the provided documents to help answer accurately.",
     });
+    
+     
 
     const reply = completion.text;
 
