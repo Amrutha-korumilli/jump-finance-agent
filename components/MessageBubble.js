@@ -1,4 +1,4 @@
-// /components/MessageBubble.js
+import {MeetingCar} from "./MeetingCard"
 const MessageBubble = ({ role, content, meetings, people }) => {
   return (
     <div className={`space-y-2 ${role === "user" ? "self-end" : "self-start"}`}>
