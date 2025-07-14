@@ -15,17 +15,18 @@ export default NextAuth({
   ],
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
-    async jwt({ token, account }) {
-      if (account) {
+    async jwt({ token, account, user }) {
+      if (account?.provider === 'google') {
         token.accessToken = account.access_token;
-        token.refreshToken = account.refresh_token;
+        token.refreshToken = account.refresh_token; // <-- capture refresh_token
       }
       return token;
     },
+  
     async session({ session, token }) {
       session.accessToken = token.accessToken;
       session.refreshToken = token.refreshToken;
-
+    
       // 🔐 Store Google token in DB
       if (session?.user?.email && token.accessToken) {
         await prisma.user.upsert({
