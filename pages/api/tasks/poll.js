@@ -4,7 +4,7 @@ import dayjs from 'dayjs';
 import * as chrono from 'chrono-node';
 import { sendEmailToolFunction } from '../../../lib/toolFunctions';
 import { getAvailableTimeSlots } from '../../../lib/calendarAvailability';
-
+import { addHubspotNote } from '../../../lib/toolFunctions';
 const prisma = new PrismaClient();
 
 export default async function handler(req, res) {
@@ -84,14 +84,19 @@ export default async function handler(req, res) {
           attendees: [{ email: toEmail }],
         },
       });
-
+      
       await sendEmailToolFunction({
         to: toEmail,
         subject: 'Meeting Confirmed',
         body: `Thanks! Your meeting has been scheduled on ${parsedStr}.`,
         user,
       });
-
+      await addHubspotNote({
+        user,
+        contactEmail: toEmail,
+        note: `✅ Meeting scheduled on ${parsedStr} with ${toEmail}. Summary: ${task.summary || 'Meeting'}`,
+      });
+      
       await prisma.task.update({
         where: { id: task.id },
         data: {
