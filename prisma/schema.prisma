@@ -68,4 +68,6 @@ model Task {
   lastMessageId  String?  // ✅ Used to avoid duplicate reply handling
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  lastRejectionReplyId String?
+
 }
