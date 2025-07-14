@@ -1,5 +1,6 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import prisma from "../../../lib/prisma";
 
 export default NextAuth({
   providers: [
@@ -8,16 +9,13 @@ export default NextAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       authorization: {
         params: {
-          scope:
-            "openid email profile https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/calendar",
-        },
+          scope: 'openid email profile https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/gmail.modify'},
       },
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
   callbacks: {
     async jwt({ token, account }) {
-      // Save access token to use with Gmail/Calendar API
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
@@ -27,6 +25,16 @@ export default NextAuth({
     async session({ session, token }) {
       session.accessToken = token.accessToken;
       session.refreshToken = token.refreshToken;
+
+      // 🔐 Store Google token in DB
+      if (session?.user?.email && token.accessToken) {
+        await prisma.user.upsert({
+          where: { email: session.user.email },
+          update: { googleAccessToken: token.accessToken },
+          create: { email: session.user.email, googleAccessToken: token.accessToken },
+        });
+      }
+
       return session;
     },
   },
