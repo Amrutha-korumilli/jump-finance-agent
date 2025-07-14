@@ -13,7 +13,7 @@ export default async function handler(req, res) {
       grant_type: "authorization_code",
       client_id: process.env.HUBSPOT_CLIENT_ID,
       client_secret: process.env.HUBSPOT_CLIENT_SECRET,
-      redirect_uri: `${process.env.NEXTAUTH_URL}/api/hubspot/callback`,
+      redirect_uri: `${process.env.NEXT_PUBLIC_BASE_URL}/api/hubspot/callback`,
       code,
     }),
     {
