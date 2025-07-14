@@ -18,10 +18,7 @@ model User {
   hubspotToken        HubspotToken?
   ongoingInstructions UserInstruction[]
   messages            Message[]
-  tasks               Task[]
    googleAccessToken   String?    
-    googleRefreshToken  String?  // <-- Add this
-
 }
 
 model HubspotToken {
@@ -55,19 +52,3 @@ model Message {
   createdAt DateTime @default(now())
 }
 
-model Task {
-  id             String   @id @default(cuid())
-  userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type           String   // e.g., "scheduleMeeting"
-  status         String   // e.g., "awaiting_reply", "confirmed", "done"
-  summary        String?
-  toEmail        String
-  proposedTimes  String?  // JSON stringified array of times
-  threadId       String?  // Gmail threadId
-  lastMessageId  String?  // ✅ Used to avoid duplicate reply handling
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  lastRejectionReplyId String?
-
-}
