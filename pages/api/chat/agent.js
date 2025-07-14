@@ -160,7 +160,6 @@ Do not look in documents unless it's a question.
     // 🛠 Manual tool extraction from text
     const toolData = extractToolCommand(finalReply);
     console.log("🔥 Tool data:", toolData);
-    console.log("🔥 Tool data:", toolData.name);
     if (toolData) {
       try {
         let result;
