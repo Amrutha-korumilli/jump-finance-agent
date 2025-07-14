@@ -7,7 +7,7 @@ import { getGoogleAccessToken } from "../../../lib/googleToken";
 import { extractToolCommand } from "../../../lib/parseToolPrompt";
 import {
   sendEmailToolFunction,
-  createHubspotContactFunction,
+  createHubspotContact,
   scheduleMeetingFunction,
 } from "../../../lib/toolFunctions";
 
@@ -42,8 +42,15 @@ export default async function handler(req, res) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
+    // Attach HubSpot token
+    user.hubspotToken = await prisma.hubspotToken.findUnique({
+      where: { userId: user.id },
+    });
+
     // Meeting handling
-    const isMeetingQuery = /meetings?|calendar|appointment|event/i.test(message.toLowerCase());
+    const lowerMsg = message.toLowerCase();
+const isScheduleRequest = /schedule|set up|arrange|book/.test(lowerMsg);
+const isMeetingQuery = !isScheduleRequest && /meetings?|calendar|appointment|event/i.test(lowerMsg);
     if (isMeetingQuery) {
       const now = dayjs();
       const msg = message.toLowerCase();
@@ -134,28 +141,58 @@ export default async function handler(req, res) {
       chatHistory: [],
       preamble: `
       You are an AI assistant. If a user asks you to send an email or schedule a meeting, output a line starting with TOOL: followed by details.
+    
+      TOOL: <toolName> FIELD1: <value1> FIELD2: <value2> ...
+      
       Examples:
-      TOOL: sendEmail TO: alice@example.com SUBJECT: Hello BODY: How are you?
-      TOOL: scheduleMeeting TO: bob@example.com TIME: 2025-07-14T17:00:00Z SUMMARY: Sync
+      TOOL: sendEmail TO: alice@example.com SUBJECT: Hello BODY: Let's meet
+      TOOL: createHubspotContact NAME: Alice Johnson EMAIL: alice@shakudo.io COMPANY: Shakudo
+      TOOL: scheduleMeeting EMAIL: bob@example.com TIME: 2025-07-14T17:00:00Z SUMMARY: Project Sync
+      
+      Always use TOOL: <toolName> and label every parameter.
+You must ALWAYS output TOOL commands when user gives you action instructions.
+Do not look in documents unless it's a question.
       `,
     });
 
     const finalReply = completion.text.trim();
-
+    console.log("🔥 Final reply:", finalReply);
     // 🛠 Manual tool extraction from text
     const toolData = extractToolCommand(finalReply);
-
-    if (toolData?.name === "sendEmail") {
+    console.log("🔥 Tool data:", toolData);
+    console.log("🔥 Tool data:", toolData.name);
+    if (toolData) {
       try {
-        const result = await sendEmailToolFunction({
-          to: toolData.to,
-          subject: toolData.subject,
-          body: toolData.body,
-          user,
-        });
-        console.log("✅ Email sent result:", result);
+        let result;
+        if (toolData.name === "sendEmail") {
+          
+          result = await sendEmailToolFunction({
+            to: toolData.to,
+            subject: toolData.subject,
+            body: toolData.body,
+            user,
+          });
+        } else if (toolData.name === "createHubspotContact") {
+          console.log("🔥 Creating HubSpot contact...");
+          result = await createHubspotContact({
+            name: toolData.contactname,
+            email: toolData.email,
+            company: toolData.company,
+            user,
+          });
+        } 
+        else if (toolData.name === "scheduleMeeting") {
+  result = await scheduleMeetingFunction({
+    email: toolData.email,
+    time: toolData.time,
+    summary: toolData.summary,
+    user,
+  });
+}
+
+        console.log(`✅ Tool [${toolData.name}] executed:`, result);
       } catch (err) {
-        console.error("❌ Error in sendEmailToolFunction:", err);
+        console.error(`❌ Tool [${toolData.name}] failed:`, err);
       }
     }
 
